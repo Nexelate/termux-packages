@@ -84,6 +84,8 @@ class TermuxPackage(object):
     def __init__(self, dir_path, fast_build_mode):
         self.dir = dir_path
         self.name = os.path.basename(self.dir)
+        if ("gpkg/" in self.dir or "gpkg-dev/" in self.dir) and self.name != "glibc":
+            self.name += "-glibc"
 
         # search package build.sh
         build_sh_path = os.path.join(self.dir, 'build.sh')
@@ -94,10 +96,14 @@ class TermuxPackage(object):
         self.antideps = parse_build_file_antidependencies(build_sh_path)
         self.excluded_arches = parse_build_file_excluded_arches(build_sh_path)
 
-        if os.getenv('TERMUX_ON_DEVICE_BUILD') == "true":
+        always_deps = []
+        if os.getenv('TERMUX_ON_DEVICE_BUILD') == "true" and os.getenv('TERMUX_PACKAGE_LIBRARY') == "bionic":
             always_deps = ['libc++']
+        elif os.getenv('TERMUX_PACKAGE_LIBRARY') == "glibc":
+            always_deps = ['glibc']
+        if len(always_deps) > 0:
             for dependency_name in always_deps:
-                if dependency_name not in self.deps and self.name not in always_deps:
+                if (os.getenv('TERMUX_PACKAGE_LIBRARY') == "bionic" and dependency_name not in self.deps and self.name not in always_deps) or (os.getenv('TERMUX_PACKAGE_LIBRARY') == "glibc" and dependency_name not in self.deps):
                     self.deps.add(dependency_name)
 
         # search subpackages
@@ -120,7 +126,8 @@ class TermuxPackage(object):
         self.subpkgs.append(subpkg)
 
         # Do not depend on itself
-        self.deps.discard(self.name)
+        if self.name != "glibc":
+            self.deps.discard(self.name)
         # Do not depend on any sub package
         if not fast_build_mode:
             self.deps.difference_update([subpkg.name for subpkg in self.subpkgs])
@@ -130,13 +137,15 @@ class TermuxPackage(object):
     def __repr__(self):
         return "<{} '{}'>".format(self.__class__.__name__, self.name)
 
-    def recursive_dependencies(self, pkgs_map):
+    def recursive_dependencies(self, pkgs_map, pkg_cash):
         "All the dependencies of the package, both direct and indirect."
         result = []
         for dependency_name in sorted(self.deps):
             dependency_package = pkgs_map[dependency_name]
-            result += dependency_package.recursive_dependencies(pkgs_map)
-            result += [dependency_package]
+            if dependency_name not in pkg_cash:
+                pkg_cash.append(dependency_name)
+                result += dependency_package.recursive_dependencies(pkgs_map, pkg_cash)
+                result += [dependency_package]
         return unique_everseen(result)
 
 class TermuxSubPackage:
@@ -182,7 +191,10 @@ def read_packages_from_directories(directories, fast_build_mode, full_buildmode)
         # Ignore directories and get all folders from repo.json file
         with open ('repo.json') as f:
             data = json.load(f)
-        directories = [d for d in data.keys()]
+        directories = []
+        for d in data.keys():
+            if d != "pkg_format":
+                directories.append(d)
 
     for package_dir in directories:
         for pkgdir_name in sorted(os.listdir(package_dir)):
@@ -282,7 +294,7 @@ def generate_target_buildorder(target_path, pkgs_map, fast_build_mode):
     # Do not depend on any sub package
     if fast_build_mode:
         package.deps.difference_update([subpkg.name for subpkg in package.subpkgs])
-    return package.recursive_dependencies(pkgs_map)
+    return package.recursive_dependencies(pkgs_map, [])
 
 def main():
     "Generate the build order either for all packages or a specific one."

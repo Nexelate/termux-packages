@@ -13,6 +13,9 @@ termux_create_pacman_subpackages() {
 		test ! -f "$subpackage" && continue
 		local SUB_PKG_NAME
 		SUB_PKG_NAME=$(basename "$subpackage" .subpackage.sh)
+		if [ "$TERMUX_PACKAGE_LIBRARY" = "glibc" ] && ! $(echo "${SUB_PKG_NAME}" | grep -q -e "glibc"); then
+			SUB_PKG_NAME="${SUB_PKG_NAME}-glibc"
+		fi
 		# Default value is same as main package, but sub package may override:
 		local TERMUX_SUBPKG_PLATFORM_INDEPENDENT=$TERMUX_PKG_PLATFORM_INDEPENDENT
 		local SUB_PKG_DIR=$TERMUX_TOPDIR/$TERMUX_PKG_NAME/subpackages/$SUB_PKG_NAME
@@ -69,7 +72,7 @@ termux_create_pacman_subpackages() {
 		if [ "$SUB_PKG_ARCH" = "any" ] && [ "$(find . -type f -print | head -n1)" = "" ]; then
 			echo "No files in subpackage '$SUB_PKG_NAME' when built for $SUB_PKG_ARCH with package '$TERMUX_PKG_NAME', so"
 			echo "the subpackage was not created. If unexpected, check to make sure the files are where you expect."
-			cd "$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX"
+			cd "$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX_CLASSICAL"
 			continue
 		fi
 		local SUB_PKG_INSTALLSIZE
@@ -195,6 +198,6 @@ termux_create_pacman_subpackages() {
 		shopt -u dotglob globstar
 
 		# Go back to main package:
-		cd "$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX"
+		cd "$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX_CLASSICAL"
 	done
 }
